@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "godot": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@coding-solo/godot-mcp"],
+      "env": {
+        "GODOT_PATH": "/home/fariz/Téléchargements/Godot_v4.7-stable_linux.x86_64",
+        "DEBUG": "true"
+      }
+    }
+  }
+}

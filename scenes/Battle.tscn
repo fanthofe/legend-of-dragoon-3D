@@ -1,0 +1,138 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://scripts/battle_manager.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/Battler.tscn" id="2"]
+[ext_resource type="Script" path="res://scripts/battle_camera.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/battle_ui.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/command_menu.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/party_status.gd" id="6"]
+[ext_resource type="Script" path="res://scripts/addition_minigame.gd" id="7"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_1"]
+size = Vector2(14, 8)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
+albedo_color = Color(0.25, 0.3, 0.22, 1)
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("ProceduralSkyMaterial_1")
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+
+[node name="Battle" type="Node3D"]
+script = ExtResource("1")
+battler_scene = ExtResource("2")
+
+[node name="Arena" type="Node3D" parent="."]
+
+[node name="Ground" type="MeshInstance3D" parent="Arena"]
+mesh = SubResource("PlaneMesh_1")
+surface_material_override/0 = SubResource("StandardMaterial3D_ground")
+
+[node name="PartyPositions" type="Node3D" parent="."]
+
+[node name="PlayerSlot0" type="Marker3D" parent="PartyPositions"]
+position = Vector3(-3, 0, -1.5)
+
+[node name="PlayerSlot1" type="Marker3D" parent="PartyPositions"]
+position = Vector3(-3, 0, 0)
+
+[node name="PlayerSlot2" type="Marker3D" parent="PartyPositions"]
+position = Vector3(-3, 0, 1.5)
+
+[node name="EnemyPositions" type="Node3D" parent="."]
+
+[node name="EnemySlot0" type="Marker3D" parent="EnemyPositions"]
+position = Vector3(3, 0, -1.5)
+
+[node name="EnemySlot1" type="Marker3D" parent="EnemyPositions"]
+position = Vector3(3, 0, 0)
+
+[node name="EnemySlot2" type="Marker3D" parent="EnemyPositions"]
+position = Vector3(3, 0, 1.5)
+
+[node name="BattleCamera" type="Camera3D" parent="."]
+position = Vector3(0, 3, 8)
+rotation_degrees = Vector3(-14, 0, 0)
+script = ExtResource("3")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+position = Vector3(0, 4, 0)
+rotation_degrees = Vector3(-45, -30, 0)
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="UI" type="CanvasLayer" parent="."]
+script = ExtResource("4")
+
+[node name="MessageLabel" type="Label" parent="UI"]
+anchor_left = 0.0
+anchor_top = 0.02
+anchor_right = 1.0
+anchor_bottom = 0.1
+horizontal_alignment = 1
+vertical_alignment = 1
+visible = false
+
+[node name="PartyStatus" type="VBoxContainer" parent="UI"]
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -170.0
+offset_right = 300.0
+offset_bottom = -10.0
+script = ExtResource("6")
+
+[node name="CommandMenu" type="Control" parent="UI"]
+anchor_left = 0.72
+anchor_top = 0.55
+anchor_right = 0.98
+anchor_bottom = 0.98
+script = ExtResource("5")
+
+[node name="MainButtons" type="VBoxContainer" parent="UI/CommandMenu"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="AttackButton" type="Button" parent="UI/CommandMenu/MainButtons"]
+text = "Attaque"
+
+[node name="MagicButton" type="Button" parent="UI/CommandMenu/MainButtons"]
+text = "Magie Dragoon"
+
+[node name="DefendButton" type="Button" parent="UI/CommandMenu/MainButtons"]
+text = "Défense"
+
+[node name="TransformButton" type="Button" parent="UI/CommandMenu/MainButtons"]
+text = "Transformation"
+
+[node name="ItemButton" type="Button" parent="UI/CommandMenu/MainButtons"]
+text = "Objet"
+
+[node name="FleeButton" type="Button" parent="UI/CommandMenu/MainButtons"]
+text = "Fuite"
+
+[node name="TargetButtons" type="VBoxContainer" parent="UI/CommandMenu"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="AdditionOverlay" type="Control" parent="UI"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("7")
+
+[node name="TargetBox" type="Panel" parent="UI/AdditionOverlay"]
+offset_right = 120.0
+offset_bottom = 120.0
+
+[node name="IncomingBox" type="Panel" parent="UI/AdditionOverlay"]
+offset_right = 360.0
+offset_bottom = 360.0
