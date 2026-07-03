@@ -1,6 +1,7 @@
 extends Control
 
 signal finished(hits_landed: int, addition: AdditionData)
+signal hit_landed(hit_index: int)  # émis à chaque coup réussi (pour caméra/anims)
 
 @onready var target_box: Panel = $TargetBox
 @onready var incoming_box: Panel = $IncomingBox
@@ -25,6 +26,7 @@ func play(addition: AdditionData) -> int:
 		if not landed:
 			break                      # timing raté : la chaîne s'arrête
 		hits_landed += 1
+		hit_landed.emit(i)
 		duration = maxf(0.3, duration - addition.speed_step)  # ça accélère !
 
 	visible = false

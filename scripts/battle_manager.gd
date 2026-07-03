@@ -35,6 +35,12 @@ func _spawn_battlers() -> void:
 		initiative[b] = randf() * TURN_THRESHOLD * 0.3  # petit décalage de départ
 		b.died.connect(_on_battler_died)
 
+	# Chaque camp fait face à l'autre (utile dès que les modèles Meshy arrivent)
+	for b in party:
+		b.face_point(b.global_position + Vector3.RIGHT)
+	for b in enemies:
+		b.face_point(b.global_position + Vector3.LEFT)
+
 	ui.setup_party_status(party, enemies)
 
 func _make_battler(battler_name: String, is_player: bool, parent: Node3D) -> Battler:
@@ -124,6 +130,7 @@ func _end_battle() -> void:
 	# transition de scène, écran de résultats, XP, etc.
 
 func _on_battler_died(b: Battler) -> void:
+	b.play_death()
 	await ui.show_message("%s est vaincu !" % b.display_name)
 
 func _tick_dragoon(actor: Battler) -> void:
@@ -140,12 +147,7 @@ func _player_turn(actor: Battler) -> void:
 
 	match choice.action:
 		"attack":
-			var target: Battler = choice.target
-			var addition: AdditionData = actor.additions[0]
-			await _do_camera_zoom(actor, target)
-			var hits: int = await ui.addition_overlay.play(addition)
-			_resolve_addition(actor, target, addition, hits)
-			await _do_camera_reset()
+			await _do_attack(actor, choice.target)
 		"magic":
 			await _do_dragoon_magic(actor, choice)
 		"transform":
@@ -158,6 +160,28 @@ func _player_turn(actor: Battler) -> void:
 		"flee":
 			await _try_flee()
 
+# --- Séquence d'attaque cinématique (joueur) ---
+func _do_attack(actor: Battler, target: Battler) -> void:
+	var addition: AdditionData = actor.additions[0]
+
+	# Plan d'attaque tiré au hasard, puis l'attaquant court au contact
+	await camera.play_attack_intro(actor, target)
+	await actor.play_lunge(target)
+
+	# Chaque coup réussi du mini-jeu déclenche frappe + réaction + secousse
+	var dir := (target.global_position - actor.global_position).normalized()
+	var on_hit := func(_i: int) -> void:
+		actor.play_strike()
+		target.play_hit_react(dir)
+		camera.on_hit(0.4)
+	ui.addition_overlay.hit_landed.connect(on_hit)
+	var hits: int = await ui.addition_overlay.play(addition)
+	ui.addition_overlay.hit_landed.disconnect(on_hit)
+
+	await _resolve_addition(actor, target, addition, hits)
+	await actor.play_return()
+	await _do_camera_reset()
+
 # --- IA ennemie ---
 func _enemy_turn(actor: Battler) -> void:
 	var targets := party.filter(func(b): return b.is_alive())
@@ -165,12 +189,26 @@ func _enemy_turn(actor: Battler) -> void:
 		return
 	var target: Battler = targets[randi() % targets.size()]
 
-	await _do_camera_zoom(actor, target)
+	await camera.play_attack_intro(actor, target)
+	await actor.play_lunge(target)
+	actor.play_strike()
+	await get_tree().create_timer(0.07).timeout  # l'impact tombe au bout du coup
+
+	# Cut sur la victime au moment où le coup touche
+	camera.cut_to_impact(target, actor)
+	camera.on_hit(0.6)
+	var dir := (target.global_position - actor.global_position).normalized()
+	target.play_hit_react(dir)
+
 	var raw := int(actor.attack * randf_range(0.9, 1.15))
 	var dmg := _compute_damage(raw, target)
 	target.take_damage(dmg)
+	target.show_damage(dmg, Color(1, 0.4, 0.35))
+	if not target.is_alive():
+		await _slow_motion(0.25, 0.5)
 	ui.refresh_status(target)
 	await ui.show_message("%s attaque %s : %d dégâts." % [actor.display_name, target.display_name, dmg])
+	await actor.play_return()
 	await _do_camera_reset()
 
 # --- Dégâts, SP ---
@@ -182,16 +220,28 @@ func _resolve_addition(actor: Battler, target: Battler, add: AdditionData, hits:
 	# Dégâts = attaque * (dégâts par coup) * nb de coups, moins la défense
 	var raw := int(actor.attack * add.damage_per_hit * hits)
 	var dmg := _compute_damage(raw, target)
+	var perfect := hits == add.hits
+
+	if perfect:
+		camera.on_hit(0.9)
+		target.flash(Color(1, 0.9, 0.3, 0.7))
 	target.take_damage(dmg)
+	target.show_damage(dmg)
+	if not target.is_alive():
+		await _slow_motion(0.25, 0.5)  # coup fatal au ralenti
 
 	# SP gagné proportionnel aux coups réussis (bonus si chaîne complète)
 	var sp := add.sp_per_hit * hits
-	if hits == add.hits:
+	if perfect:
 		sp = int(sp * 1.5)   # bonus "Addition parfaite"
 	actor.gain_sp(sp)
 
 	ui.refresh_status(actor)
-	await ui.show_message("%s inflige %d dégâts (%d coups) !" % [actor.display_name, dmg, hits])
+	ui.refresh_status(target)
+	if perfect:
+		await ui.show_message("Addition parfaite ! %s inflige %d dégâts !" % [actor.display_name, dmg])
+	else:
+		await ui.show_message("%s inflige %d dégâts (%d coups) !" % [actor.display_name, dmg, hits])
 
 func _compute_damage(raw: int, target: Battler) -> int:
 	var def := target.defense
@@ -215,15 +265,30 @@ func _do_dragoon_magic(actor: Battler, choice: Dictionary) -> void:
 	if not actor.is_dragoon:
 		await ui.show_message("Transformation requise.")
 		return
-	var power: float = await ui.dragoon_charge_minigame()  # renvoie 1.0..2.0 selon les appuis
 	var target: Battler = choice.target
+
+	# La caméra orbite lentement autour du lanceur pendant la charge
+	await camera.play_magic_shot(actor)
+	actor.flash(Color(0.5, 0.7, 1, 0.5))
+	var power: float = await ui.dragoon_charge_minigame()  # renvoie 1.0..2.0 selon les appuis
+
 	var raw := int(actor.magic_attack * 1.6 * power)
 	if _element_advantage(actor.element, target.element):
 		raw = int(raw * 1.5)
 	var dmg := maxi(1, raw - target.magic_defense)
+
+	# Cut sur la cible pour l'explosion du sort
+	camera.cut_to_impact(target, actor)
+	camera.on_hit(0.9)
+	var dir := (target.global_position - actor.global_position).normalized()
+	target.play_hit_react(dir)
 	target.take_damage(dmg)
+	target.show_damage(dmg, Color(0.6, 0.8, 1))
+	if not target.is_alive():
+		await _slow_motion(0.25, 0.5)
 	ui.refresh_status(target)
 	await ui.show_message("Magie Dragoon : %d dégâts !" % dmg)
+	await _do_camera_reset()
 
 func _element_advantage(atk_el: String, def_el: String) -> bool:
 	var chart := {"fire": "wind", "wind": "earth", "earth": "water", "water": "fire"}
@@ -233,6 +298,8 @@ func _element_advantage(atk_el: String, def_el: String) -> bool:
 func _use_item(actor: Battler, choice: Dictionary) -> void:
 	var target: Battler = choice.get("target", actor)
 	target.heal(ITEM_HEAL_AMOUNT)
+	target.flash(Color(0.4, 1, 0.5, 0.5))
+	target.show_damage(ITEM_HEAL_AMOUNT, Color(0.5, 1, 0.55))
 	ui.refresh_status(target)
 	await ui.show_message("%s utilise une Potion sur %s (+%d PV)." % [actor.display_name, target.display_name, ITEM_HEAL_AMOUNT])
 
@@ -244,8 +311,11 @@ func _try_flee() -> void:
 		await ui.show_message("Impossible de fuir !")
 
 # --- Caméra cinématique ---
-func _do_camera_zoom(attacker: Battler, target: Battler) -> void:
-	await camera.zoom_to(attacker, target)
-
 func _do_camera_reset() -> void:
 	await camera.reset()
+
+# Ralenti bref (coup fatal). real_duration est en temps réel, hors time_scale.
+func _slow_motion(time_scale: float, real_duration: float) -> void:
+	Engine.time_scale = time_scale
+	await get_tree().create_timer(real_duration, true, false, true).timeout
+	Engine.time_scale = 1.0
